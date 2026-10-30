@@ -6,6 +6,8 @@ You can jump into any conversation from the Facebook Page Inbox app on your phon
 
 **Stack:** Node.js + TypeScript · Claude API (Anthropic) · Meta Messenger Platform · SQLite.
 
+> 🇻🇳 Hướng dẫn cài đặt bằng tiếng Việt: [setup.vi.md](setup.vi.md)
+
 ---
 
 ## What it does
