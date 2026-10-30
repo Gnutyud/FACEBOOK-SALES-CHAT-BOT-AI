@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.fb-sales-bot</string>
+
+  <key>ProgramArguments</key>
+  <array>
+    <string>/bin/zsh</string>
+    <string>/Users/tung/Documents/working/fb-sales-bot/start.sh</string>
+  </array>
+
+  <key>WorkingDirectory</key>
+  <string>/Users/tung/Documents/working/fb-sales-bot</string>
+
+  <key>RunAtLoad</key>
+  <true/>
+
+  <key>KeepAlive</key>
+  <true/>
+
+  <key>StandardOutPath</key>
+  <string>/Users/tung/Documents/working/fb-sales-bot/data/launchd.out.log</string>
+
+  <key>StandardErrorPath</key>
+  <string>/Users/tung/Documents/working/fb-sales-bot/data/launchd.err.log</string>
+
+  <key>ThrottleInterval</key>
+  <integer>10</integer>
+</dict>
+</plist>

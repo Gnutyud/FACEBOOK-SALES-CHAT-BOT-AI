@@ -1,0 +1,32 @@
+{
+  "name": "fb-sales-bot",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "AI sales assistant for a Facebook Page, powered by Claude",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "start": "tsx src/index.ts",
+    "setup": "tsx scripts/setup.ts",
+    "test:webhook": "tsx scripts/test-webhook.ts",
+    "test:order": "tsx scripts/test-order.ts",
+    "test:claude": "tsx scripts/test-claude-loop.ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "latest",
+    "better-sqlite3": "latest",
+    "dotenv": "latest",
+    "express": "^4.21.2",
+    "zod": "latest"
+  },
+  "devDependencies": {
+    "@types/better-sqlite3": "latest",
+    "@types/express": "^4.17.21",
+    "@types/node": "latest",
+    "tsx": "latest",
+    "typescript": "latest"
+  }
+}

@@ -1,0 +1,23 @@
+{
+  "max_discount_percent": 10,
+  "free_shipping_threshold_vnd": 500000,
+  "shipping_fee_vnd": 30000,
+  "bulk_discounts": [
+    { "min_quantity": 3, "discount_percent": 5 },
+    { "min_quantity": 5, "discount_percent": 10 }
+  ],
+  "never_promise": [
+    "Ngày giao hàng chính xác cho khách ở tỉnh xa",
+    "Hàng chính hãng/chất lượng cao hơn mô tả trong knowledge.md",
+    "Đổi trả ngoài chính sách ghi trong knowledge.md",
+    "Khuyến mãi không có trong knowledge.md",
+    "Giữ hàng vô thời hạn khi khách chưa cọc"
+  ],
+  "escalation_triggers": [
+    "Khách tức giận, khiếu nại, hoặc đòi hoàn tiền",
+    "Khách yêu cầu gặp chủ shop / người thật",
+    "Khách đòi giảm giá vượt quá max_discount_percent",
+    "Đơn hàng có tổng giá trị trên 5.000.000đ",
+    "Khách hỏi thông tin không có trong knowledge.md mà không thể trả lời an toàn"
+  ]
+}
