@@ -7,13 +7,25 @@ import { ALL_TOOLS, executeTool, type ToolContext } from "./orders";
 type Msg = Anthropic.Beta.BetaMessageParam;
 type Block = Anthropic.Beta.BetaContentBlockParam;
 
-// Pin the official endpoint and API key so unrelated ANTHROPIC_* variables in the
+// Pin the endpoint and credentials so unrelated ANTHROPIC_* variables in the
 // owner's shell (proxies, coding tools) can never hijack the bot's traffic.
-// BOT_ANTHROPIC_BASE_URL exists only for the offline test suite.
-const client = new Anthropic({
-  apiKey: config.ANTHROPIC_API_KEY,
-  baseURL: config.BOT_ANTHROPIC_BASE_URL ?? "https://api.anthropic.com",
-});
+// Claude uses x-api-key; DeepSeek's Anthropic-compatible endpoint uses Bearer.
+// BOT_ANTHROPIC_BASE_URL is an optional override for tests / self-hosted gateways.
+const usingDeepSeek = config.BOT_PROVIDER === "deepseek";
+
+const client = new Anthropic(
+  usingDeepSeek
+    ? {
+        authToken: config.DEEPSEEK_API_KEY!,
+        apiKey: null, // don't let ANTHROPIC_API_KEY from the shell leak in
+        baseURL: config.BOT_ANTHROPIC_BASE_URL ?? "https://api.deepseek.com/anthropic",
+      }
+    : {
+        apiKey: config.ANTHROPIC_API_KEY!,
+        authToken: null, // don't let ANTHROPIC_AUTH_TOKEN from the shell leak in
+        baseURL: config.BOT_ANTHROPIC_BASE_URL ?? "https://api.anthropic.com",
+      }
+);
 
 const MAX_TOOL_ROUNDS = 6;
 
@@ -30,6 +42,8 @@ function systemParam() {
   ];
 }
 
+// DeepSeek's Anthropic-compatible endpoint accepts this same shape (verified:
+// betas, fallbacks, adaptive thinking, effort, strict tools, cache_control).
 function baseRequest() {
   return {
     model: config.BOT_MODEL,

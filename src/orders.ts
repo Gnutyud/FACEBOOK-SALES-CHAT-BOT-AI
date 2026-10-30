@@ -1,9 +1,11 @@
 import fs from "node:fs";
+import path from "node:path";
 import type Anthropic from "@anthropic-ai/sdk";
 import { z } from "zod";
-import { paths } from "./config";
+import { config, paths } from "./config";
 import { allOrders, createOrder, findOrders, type OrderRow } from "./store";
 import { notifyOwner } from "./notify";
+import { sendImage } from "./meta";
 
 /* ------------------------------ tool definitions --------------------------- */
 
@@ -97,7 +99,47 @@ export const handoverToOwnerTool: Anthropic.Beta.BetaTool = {
   },
 };
 
-export const ALL_TOOLS = [saveOrderTool, getOrderStatusTool, handoverToOwnerTool];
+export const notifyOwnerTool: Anthropic.Beta.BetaTool = {
+  name: "notify_owner",
+  description:
+    "Báo cho chủ shop khi khách hỏi thông tin chưa có trong knowledge.md (nguồn gốc, chất liệu, tồn kho đặc biệt...) hoặc cần chủ shop xác nhận. KHÔNG chuyển cuộc trò chuyện và KHÔNG tạm dừng bot. Sau khi gọi, hãy nói khách là em sẽ kiểm tra và báo lại, rồi tiếp tục tư vấn bình thường.",
+  strict: true,
+  input_schema: {
+    type: "object",
+    properties: {
+      message: { type: "string", description: "Nội dung ngắn gọn cần chủ shop xác nhận" },
+    },
+    required: ["message"],
+    additionalProperties: false,
+  },
+};
+
+export const sendProductImagesTool: Anthropic.Beta.BetaTool = {
+  name: "send_product_images",
+  description:
+    "Gửi ảnh sản phẩm thật cho khách qua Messenger. Dùng khi khách hỏi ảnh, muốn xem mẫu, hoặc muốn xem màu cụ thể. Truyền mã sản phẩm (WF-01..WF-08) và màu nếu khách đã nêu; dùng chuỗi rỗng nếu khách không nêu màu.",
+  strict: true,
+  input_schema: {
+    type: "object",
+    properties: {
+      product_code: { type: "string", description: "Mã sản phẩm, ví dụ WF-02" },
+      color: {
+        type: "string",
+        description: "Màu khách muốn xem (nâu, đen, bạc...). Dùng chuỗi rỗng nếu không có.",
+      },
+    },
+    required: ["product_code", "color"],
+    additionalProperties: false,
+  },
+};
+
+export const ALL_TOOLS = [
+  saveOrderTool,
+  getOrderStatusTool,
+  handoverToOwnerTool,
+  notifyOwnerTool,
+  sendProductImagesTool,
+];
 
 /* ------------------------------- validation -------------------------------- */
 
@@ -183,6 +225,15 @@ export async function executeTool(
       ctx.handover = { reason };
       return "Đã chuyển cuộc trò chuyện cho chủ shop. Hãy báo khách chủ shop sẽ trả lời ngay.";
     }
+    case "notify_owner": {
+      const message =
+        (input as { message?: string })?.message?.trim() ||
+        "Khách cần chủ shop xác nhận thông tin";
+      await notifyOwner(`🙋 Khách cần xác nhận (${ctx.psid})\n${message}`).catch(() => {});
+      return "Đã báo chủ shop. Hãy nói với khách là em sẽ kiểm tra và báo lại ngay, sau đó tiếp tục tư vấn các nội dung khác. KHÔNG chuyển cuộc trò chuyện.";
+    }
+    case "send_product_images":
+      return sendProductImages(input, ctx.psid);
     default:
       return `Công cụ không tồn tại: ${name}`;
   }
@@ -219,6 +270,72 @@ async function saveOrder(input: unknown, psid: string): Promise<string> {
   return `Đã lưu đơn hàng #${id}. Hãy xác nhận với khách: mã đơn #${id}, tổng ${d.total.toLocaleString(
     "vi-VN"
   )}đ, và thời gian giao dự kiến theo kiến thức cửa hàng.`;
+}
+
+/* ------------------------------ product images ----------------------------- */
+
+const IMAGE_EXTENSIONS = new Set([".jpg", ".jpeg", ".png", ".webp", ".gif"]);
+
+/** Lowercase + strip Vietnamese diacritics so `nâu` matches `nau` in filenames. */
+function normalizeText(s: string): string {
+  return s
+    .normalize("NFD")
+    .replace(/[̀-ͯ]/g, "")
+    .replace(/đ/g, "d")
+    .replace(/Đ/g, "D")
+    .toLowerCase()
+    .trim();
+}
+
+/**
+ * Send the photos that belong to a product code. Files live in assets/images and
+ * are named after the SKU, e.g. `wf-02.jpg`, `wf-02-nau.jpg`, `wf-02-den.jpg`.
+ */
+async function sendProductImages(input: unknown, psid: string): Promise<string> {
+  const raw = input as { product_code?: string; color?: string };
+  const code = normalizeText(raw?.product_code ?? "").replace(/^wf\s*[-_]?\s*/, "wf-");
+  if (!/^wf-\d{1,2}$/.test(code)) {
+    return "Mã sản phẩm không hợp lệ. Hãy dùng mã như WF-01, WF-02…";
+  }
+  if (!fs.existsSync(paths.images)) {
+    return "Shop chưa có ảnh sản phẩm. Hãy báo khách chờ chủ shop gửi ảnh.";
+  }
+
+  const files = fs
+    .readdirSync(paths.images)
+    .filter((f) => IMAGE_EXTENSIONS.has(path.extname(f).toLowerCase()))
+    .filter((f) => normalizeText(f).startsWith(code))
+    .sort();
+
+  const colorTokens = normalizeText(raw?.color ?? "")
+    .split(/[^a-z0-9]+/)
+    .filter((t) => t.length >= 2);
+  const colorMatches = colorTokens.length
+    ? files.filter((f) => colorTokens.some((t) => normalizeText(f).includes(t)))
+    : [];
+  const selected = (colorMatches.length ? colorMatches : files).slice(0, 4);
+
+  if (selected.length === 0) {
+    return `Chưa có ảnh cho mẫu ${code.toUpperCase()}. Hãy báo khách chờ chủ shop gửi ảnh.`;
+  }
+  if (!config.WEBHOOK_PUBLIC_URL) {
+    return "Chưa cấu hình WEBHOOK_PUBLIC_URL nên không gửi được ảnh. Hãy báo khách chờ chủ shop.";
+  }
+
+  const base = config.WEBHOOK_PUBLIC_URL.replace(/\/$/, "");
+  let sent = 0;
+  for (const file of selected) {
+    try {
+      await sendImage(psid, `${base}/images/${encodeURIComponent(file)}`);
+      sent++;
+    } catch (err) {
+      console.error(`[images] send failed for ${file}:`, err);
+    }
+  }
+  if (sent === 0) {
+    return "Không gửi được ảnh lúc này. Hãy báo khách chờ chủ shop gửi ảnh.";
+  }
+  return `Đã gửi ${sent} ảnh của mẫu ${code.toUpperCase()} cho khách. Hãy hỏi khách muốn xem thêm mẫu/màu nào khác.`;
 }
 
 function orderStatus(input: unknown): string {

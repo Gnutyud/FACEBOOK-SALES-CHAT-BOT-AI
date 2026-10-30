@@ -13,17 +13,33 @@ import path from "node:path";
 // Throwaway data dir so the test never touches real conversations or orders.
 const TEST_DATA_DIR = fs.mkdtempSync(path.join(os.tmpdir(), "fb-bot-claude-test-"));
 
-process.env.ANTHROPIC_API_KEY = "test-key";
+// Run the same loop in either provider mode: `npm run test:claude` (default)
+// or `npm run test:deepseek`.
+const provider = process.argv.includes("--deepseek") ? "deepseek" : "anthropic";
+const expectedModel = provider === "deepseek" ? "deepseek-v4-pro" : "claude-opus-5-5";
+
+process.env.BOT_PROVIDER = provider;
+process.env.BOT_MODEL = ""; // use the provider default, ignore any real .env value
+if (provider === "deepseek") {
+  delete process.env.ANTHROPIC_API_KEY;
+  process.env.DEEPSEEK_API_KEY = "test-deepseek-key";
+} else {
+  process.env.ANTHROPIC_API_KEY = "test-anthropic-key";
+  delete process.env.DEEPSEEK_API_KEY;
+}
 process.env.META_PAGE_ID = "123456789";
 process.env.META_PAGE_TOKEN = "dummy-token";
 process.env.META_APP_ID = "111";
 process.env.META_APP_SECRET = "testsecret";
 process.env.META_VERIFY_TOKEN = "verify123";
 process.env.OWNER_SETUP_CODE = "TEST-CODE-9876";
+process.env.NOTIFY_URL = ""; // never send real pushes from an offline test
+process.env.WEBHOOK_PUBLIC_URL = "";
 process.env.BOT_DATA_DIR = TEST_DATA_DIR;
 process.env.DRY_RUN = "0";
 
 const requests: any[] = [];
+const authHeaders: { authorization?: string; xApiKey?: string }[] = [];
 let mode: "tool" | "text" | "refusal" = "tool";
 
 const mock = http.createServer((req, res) => {
@@ -32,6 +48,10 @@ const mock = http.createServer((req, res) => {
   req.on("end", () => {
     const parsed = JSON.parse(body);
     requests.push(parsed);
+    authHeaders.push({
+      authorization: req.headers.authorization,
+      xApiKey: req.headers["x-api-key"] as string | undefined,
+    });
 
     let content: unknown[];
     let stopReason: string;
@@ -83,7 +103,7 @@ function assert(cond: boolean, label: string): void {
 }
 
 async function main(): Promise<void> {
-  console.log("\n🧠 FB Sales Bot — Claude tool-loop test (mock API)\n");
+  console.log(`\n🧠 FB Sales Bot — tool-loop test (mock API, provider=${provider})\n`);
 
   await new Promise<void>((resolve) => mock.listen(0, "127.0.0.1", resolve));
   const port = (mock.address() as any).port;
@@ -98,7 +118,14 @@ async function main(): Promise<void> {
   assert(result.text.includes("đơn"), `final reply returned: "${result.text}"`);
 
   const first = requests[0];
-  assert(first.model === "claude-opus-5-5", "model = claude-opus-5-5");
+  assert(first.model === expectedModel, `model = ${expectedModel}`);
+  const expectedToken =
+    provider === "deepseek" ? "test-deepseek-key" : "test-anthropic-key";
+  assert(
+    authHeaders[0]?.authorization === `Bearer ${expectedToken}`,
+    "auth uses the provider's own key"
+  );
+  assert(!authHeaders[0]?.xApiKey, "no stray x-api-key header");
   assert(first.fallbacks === "default", "fallbacks = default");
   assert(first.thinking?.type === "adaptive", "thinking = adaptive");
   assert(first.output_config?.effort === "low", "effort = low");

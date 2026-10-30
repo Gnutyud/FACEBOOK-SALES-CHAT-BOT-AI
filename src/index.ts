@@ -1,5 +1,5 @@
 import express from "express";
-import { config } from "./config";
+import { config, paths } from "./config";
 import { webhookRouter } from "./webhooks";
 import { getPageInfo, subscribePage } from "./meta";
 import { getOwnerPsid, isBotEnabled, pruneDedupe } from "./store";
@@ -7,6 +7,9 @@ import { getOwnerPsid, isBotEnabled, pruneDedupe } from "./store";
 const app = express();
 
 app.use(webhookRouter);
+
+// Product photos are sent to Messenger by public HTTPS URL.
+app.use("/images", express.static(paths.images, { maxAge: "1h" }));
 
 app.get("/health", (_req, res) => {
   res.json({
@@ -33,7 +36,11 @@ const server = app.listen(config.PORT, () => {
 async function boot(): Promise<void> {
   try {
     const page = await getPageInfo();
-    console.log(`   page: ${page.name} (${page.id})`);
+    console.log(
+      page.name
+        ? `   page: ${page.name} (${page.id})`
+        : `   page: id ${page.id} (name not readable with this token)`
+    );
   } catch (err) {
     console.error(
       "   ⚠️  Could not verify the Page access token. Check META_PAGE_ID / META_PAGE_TOKEN in .env.\n",

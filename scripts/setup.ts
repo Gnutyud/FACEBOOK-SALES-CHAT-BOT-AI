@@ -56,7 +56,11 @@ async function main(): Promise<void> {
 
   step("1/4 Verify Page token");
   const page = await getPageInfo();
-  ok(`Connected to Page "${page.name}" (id ${page.id})`);
+  ok(
+    page.name
+      ? `Connected to Page "${page.name}" (id ${page.id})`
+      : `Connected to Page id ${page.id} (name needs the optional pages_read_engagement scope)`
+  );
 
   step("2/4 Register webhook with Meta");
   if (!config.WEBHOOK_PUBLIC_URL) {

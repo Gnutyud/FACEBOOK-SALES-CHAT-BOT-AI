@@ -11,6 +11,8 @@ import path from "node:path";
 
 // Dummy config + isolated data dir must exist BEFORE the modules load.
 const TEST_DATA_DIR = fs.mkdtempSync(path.join(os.tmpdir(), "fb-bot-order-test-"));
+process.env.BOT_PROVIDER = "anthropic";
+process.env.BOT_MODEL = ""; // use the provider default, ignore any real .env value
 process.env.ANTHROPIC_API_KEY = "test-key";
 process.env.META_PAGE_ID = "123456789";
 process.env.META_PAGE_TOKEN = "dummy-token";
@@ -18,6 +20,8 @@ process.env.META_APP_ID = "111";
 process.env.META_APP_SECRET = "testsecret";
 process.env.META_VERIFY_TOKEN = "verify123";
 process.env.OWNER_SETUP_CODE = "TEST-CODE-9876";
+process.env.NOTIFY_URL = ""; // never send real pushes from an offline test
+process.env.WEBHOOK_PUBLIC_URL = "";
 process.env.BOT_DATA_DIR = TEST_DATA_DIR;
 
 function assert(cond: boolean, label: string): void {

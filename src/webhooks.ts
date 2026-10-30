@@ -3,14 +3,16 @@ import express, { type Request, type Response } from "express";
 import { config } from "./config";
 import {
   canPmFromComment,
+  getConversation,
   getOwnerPsid,
   isBotEnabled,
   isPaused,
   isSentByBot,
   markPmFromComment,
   markSeen,
+  pausedPsids,
   pauseThread,
-  resumeAllPaused,
+  resumeThread,
   setBotEnabled,
   setOwnerPsid,
   updateOrderStatus,
@@ -24,6 +26,7 @@ import {
   sendMessage,
   sendPrivateReply,
   sendTypingOn,
+  takeThreadControl,
 } from "./meta";
 import { generateCommentReply, generateReply } from "./claude";
 import { handToOwner, handleEcho } from "./handover";
@@ -162,7 +165,13 @@ function handleMessagingEvent(ev: any, isStandby: boolean): void {
   if (!message?.mid) return; // deliveries, read receipts, etc.
 
   if (isStandby) {
-    // Another app (Page Inbox) is handling this thread — stay silent.
+    // Another app (Page Inbox) owns this thread. Mark it paused so "bot tiếp"
+    // can reclaim control; replying now would be rejected.
+    getConversation(senderId);
+    pauseThread(senderId, 0);
+    console.log(
+      `[webhook] standby event from …${senderId.slice(-4)} — Page Inbox owns thread (paused until "bot tiếp")`
+    );
     return;
   }
 
@@ -180,11 +189,39 @@ function handleMessagingEvent(ev: any, isStandby: boolean): void {
   });
 }
 
+/**
+ * A thread paused by a handover or owner takeover auto-resumes when its timer
+ * expires. Reclaim thread control from Page Inbox first, otherwise Meta rejects
+ * the bot's outgoing messages.
+ */
+async function resumeExpiredThread(psid: string): Promise<boolean> {
+  const conv = getConversation(psid);
+  if (conv.state !== "paused") return true;
+  if (conv.pausedUntil === 0 || conv.pausedUntil > Date.now()) {
+    console.log(
+      `[webhook] DM from …${psid.slice(-4)} ignored — thread paused${
+        conv.pausedUntil
+          ? ` until ${new Date(conv.pausedUntil).toLocaleString("vi-VN")}`
+          : " (manual)"
+      }`
+    );
+    return false;
+  }
+  await takeThreadControl(psid).catch(() => {});
+  resumeThread(psid);
+  console.log(`[handover] auto-resumed thread ${psid}`);
+  return true;
+}
+
 async function handleIncomingText(
   psid: string,
   text: string | undefined,
   hasAttachments: boolean
 ): Promise<void> {
+  console.log(
+    `[webhook] DM from …${psid.slice(-4)} (${text ? `${text.length} chars` : "no text"})`
+  );
+
   // Owner enrolment: first message that matches the setup code becomes the owner.
   if (text && !getOwnerPsid() && text.trim().toUpperCase() === config.OWNER_SETUP_CODE.toUpperCase()) {
     setOwnerPsid(psid);
@@ -198,12 +235,16 @@ async function handleIncomingText(
 
   const owner = getOwnerPsid();
   if (owner && psid === owner) {
+    console.log("[webhook] message from owner — handled as owner message (no auto-reply)");
     await handleOwnerMessage(psid, text ?? "");
     return;
   }
 
-  if (!isBotEnabled()) return;
-  if (isPaused(psid)) return;
+  if (!isBotEnabled()) {
+    console.log(`[webhook] DM from …${psid.slice(-4)} ignored — bot disabled`);
+    return;
+  }
+  if (!(await resumeExpiredThread(psid))) return;
 
   if (!text) {
     if (hasAttachments) {
@@ -250,10 +291,24 @@ async function handleOwnerMessage(psid: string, text: string): Promise<void> {
     return;
   }
   if (/^bot\s*(tiếp|tiep|resume)/i.test(t)) {
-    const n = resumeAllPaused();
-    await sendMessage(psid, `▶️ Đã tiếp tục trả lời ${n} cuộc trò chuyện đang tạm dừng.`).catch(
-      () => {}
-    );
+    const psids = pausedPsids();
+    let reclaimed = 0;
+    for (const p of psids) {
+      try {
+        await takeThreadControl(p);
+        reclaimed++;
+      } catch (err) {
+        console.error(`[handover] could not take control of …${p.slice(-4)}:`, err);
+      }
+      resumeThread(p);
+    }
+    await sendMessage(
+      psid,
+      `▶️ Đã tiếp tục ${psids.length} cuộc trò chuyện (lấy lại quyền: ${reclaimed}).` +
+        (reclaimed < psids.length
+          ? "\n⚠️ Một số thread vẫn do Page Inbox giữ. Hãy đặt Chat bot làm default app trong Conversation Routing."
+          : "")
+    ).catch(() => {});
     return;
   }
 
@@ -332,7 +387,14 @@ function handleHandoverEvent(ev: any): void {
   const psid: string | undefined = ev?.sender?.id;
   if (!psid) return;
 
-  if (ev.pass_thread_control?.new_owner_app_id === PAGE_INBOX_APP_ID) {
+  const newOwner = ev.pass_thread_control?.new_owner_app_id;
+  if (String(newOwner) === String(config.META_APP_ID)) {
+    // Control came back to the bot (e.g. owner marked the chat "Done").
+    resumeThread(psid);
+    console.log(`[handover] bot regained control of ${psid}`);
+    return;
+  }
+  if (String(newOwner) === PAGE_INBOX_APP_ID) {
     // Control moved to the Page Inbox app — the owner is handling this thread.
     // Auto-resume after 24h as a safety net; "bot tiếp" resumes immediately.
     pauseThread(psid, Date.now() + 24 * 60 * 60 * 1000);

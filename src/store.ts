@@ -138,6 +138,15 @@ export function resumeAllPaused(): number {
   return res.changes;
 }
 
+/** PSIDs of every paused conversation. */
+export function pausedPsids(): string[] {
+  return (
+    db.prepare("SELECT psid FROM conversations WHERE state = 'paused'").all() as {
+      psid: string;
+    }[]
+  ).map((r) => r.psid);
+}
+
 /* ------------------------------ deduplication ----------------------------- */
 
 /** Returns true the first time a message is seen; false for duplicates. */

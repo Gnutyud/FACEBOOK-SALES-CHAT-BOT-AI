@@ -13,6 +13,7 @@
     "test:webhook": "tsx scripts/test-webhook.ts",
     "test:order": "tsx scripts/test-order.ts",
     "test:claude": "tsx scripts/test-claude-loop.ts",
+    "test:deepseek": "tsx scripts/test-claude-loop.ts --deepseek",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {

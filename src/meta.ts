@@ -64,6 +64,18 @@ export async function sendMessage(psid: string, text: string): Promise<void> {
   if (res.message_id) markSent(res.message_id);
 }
 
+/** Send an image by public HTTPS URL (Meta fetches it, so it must be reachable). */
+export async function sendImage(psid: string, url: string): Promise<void> {
+  const res = await graph<{ message_id?: string }>(`/${config.META_PAGE_ID}/messages`, {
+    body: {
+      recipient: { id: psid },
+      messaging_type: "RESPONSE",
+      message: { attachment: { type: "image", payload: { url } } },
+    },
+  });
+  if (res.message_id) markSent(res.message_id);
+}
+
 export async function sendTypingOn(psid: string): Promise<void> {
   await graph(`/${config.META_PAGE_ID}/messages`, {
     body: { recipient: { id: psid }, sender_action: "typing_on" },
@@ -143,6 +155,7 @@ const WEBHOOK_FIELDS = [
 
 export async function subscribePage(): Promise<void> {
   await graph(`/${config.META_PAGE_ID}/subscribed_apps`, {
+    method: "POST",
     query: { subscribed_fields: WEBHOOK_FIELDS },
   });
 }
@@ -174,10 +187,22 @@ export async function updateAppWebhook(callbackUrl: string): Promise<void> {
 
 /* --------------------------------- lookups -------------------------------- */
 
-export async function getPageInfo(): Promise<{ id: string; name: string }> {
-  return graph<{ id: string; name: string }>(`/${config.META_PAGE_ID}`, {
-    query: { fields: "id,name" },
-  });
+export async function getPageInfo(): Promise<{ id: string; name?: string }> {
+  try {
+    return await graph<{ id: string; name: string }>(`/${config.META_PAGE_ID}`, {
+      query: { fields: "id,name" },
+    });
+  } catch (err) {
+    // Reading page fields needs pages_read_engagement, an optional scope the
+    // bot never uses. Messenger-only tokens (the documented setup) can still
+    // prove access through their own Messenger profile, so don't block on it.
+    try {
+      await graph(`/${config.META_PAGE_ID}/messenger_profile`);
+      return { id: config.META_PAGE_ID };
+    } catch {
+      throw err;
+    }
+  }
 }
 
 export async function getUserName(psid: string): Promise<string | undefined> {

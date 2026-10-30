@@ -17,7 +17,7 @@
     "Khách tức giận, khiếu nại, hoặc đòi hoàn tiền",
     "Khách yêu cầu gặp chủ shop / người thật",
     "Khách đòi giảm giá vượt quá max_discount_percent",
-    "Đơn hàng có tổng giá trị trên 5.000.000đ",
-    "Khách hỏi thông tin không có trong knowledge.md mà không thể trả lời an toàn"
-  ]
+    "Đơn hàng có tổng giá trị trên 5.000.000đ"
+  ],
+  "unknown_info_action": "Dùng công cụ notify_owner để báo chủ shop và trả lời khách là em sẽ kiểm tra lại; KHÔNG gọi handover_to_owner và KHÔNG tạm dừng cuộc trò chuyện."
 }
